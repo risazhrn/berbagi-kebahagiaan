@@ -1,308 +1,233 @@
-
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Search,
-  X,
-} from "lucide-react";
-
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { CalendarDays, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { EventCard } from "@/components/event-card";
-import type { DemoEvent } from "@/data/demo-events";
+import {
+  PUBLIC_EVENT_PAGE_SIZE,
+  type PublicEvent,
+} from "@/lib/events/event-model";
 
-type EventsExplorerProps = {
-  events: DemoEvent[];
+type Tab = "upcoming" | "past";
+
+type Props = {
+  events: PublicEvent[];
+  hasMore?: boolean;
 };
 
-const ITEMS_PER_PAGE = 6;
+const REFRESH_INTERVAL_MS = 60_000;
 
-export default function EventsExplorer({
-  events,
-}: EventsExplorerProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
+export default function EventsExplorer({ events, hasMore = false }: Props) {
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>("upcoming");
+  const [searchInput, setSearchInput] = useState("");
+  const [page, setPage] = useState(1);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const lastRefreshRef = useRef(Date.now());
 
-  const sectionRef = useRef<HTMLElement>(null);
+  // Only refresh when returning to a tab after the minimum interval.
+  // It never runs when switching the event tabs or typing a search query.
+  useEffect(() => {
+    const refreshIfStale = () => {
+      if (document.visibilityState !== "visible") return;
+      const current = Date.now();
+      setNowMs(current);
+      if (current - lastRefreshRef.current < REFRESH_INTERVAL_MS) return;
+      lastRefreshRef.current = current;
+      router.refresh();
+    };
 
-  // Search events based on keyword
-  const filteredEvents = useMemo(() => {
-    const query = searchQuery.trim().toLocaleLowerCase("id-ID");
+    document.addEventListener("visibilitychange", refreshIfStale);
+    window.addEventListener("focus", refreshIfStale);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshIfStale);
+      window.removeEventListener("focus", refreshIfStale);
+    };
+  }, [router]);
 
-    if (!query) return events;
+  const lists = useMemo(() => {
+    const upcoming: PublicEvent[] = [];
+    const past: PublicEvent[] = [];
 
-    return events.filter((event) => {
-      const searchableText = [
-        event.title,
-        event.category,
-        event.location,
-        event.description,
-      ]
-        .join(" ")
-        .toLocaleLowerCase("id-ID");
+    for (const event of events) {
+      const end = Date.parse(event.end_at);
+      if (!Number.isFinite(end)) continue;
 
-      return searchableText.includes(query);
-    });
-  }, [events, searchQuery]);
-
-  // Pagination
-  const totalPages = Math.ceil(
-    filteredEvents.length / ITEMS_PER_PAGE
-  );
-
-  const safePage = Math.min(
-    currentPage,
-    Math.max(1, totalPages)
-  );
-
-  const paginatedEvents = useMemo(() => {
-    const startIndex = (safePage - 1) * ITEMS_PER_PAGE;
-
-    return filteredEvents.slice(
-      startIndex,
-      startIndex + ITEMS_PER_PAGE
-    );
-  }, [filteredEvents, safePage]);
-
-  // Generate maximum 5 page numbers
-  const pageNumbers = useMemo(() => {
-    if (totalPages <= 5) {
-      return Array.from(
-        { length: totalPages },
-        (_, index) => index + 1
-      );
+      if (event.status === "published" && end >= nowMs) {
+        upcoming.push(event);
+      } else if (
+        (event.status === "published" || event.status === "completed") &&
+        end < nowMs
+      ) {
+        past.push(event);
+      }
     }
 
-    const startPage = Math.max(
-      1,
-      Math.min(safePage - 2, totalPages - 4)
+    upcoming.sort((a, b) =>
+      Date.parse(a.start_at) - Date.parse(b.start_at)
     );
+    past.sort((a, b) => Date.parse(b.end_at) - Date.parse(a.end_at));
+    return { upcoming, past };
+  }, [events, nowMs]);
 
-    return Array.from(
-      { length: 5 },
-      (_, index) => startPage + index
+  const query = searchInput.trim().toLocaleLowerCase("id-ID");
+  const visible = useMemo(() => {
+    const items = lists[tab];
+    if (!query) return items;
+    return items.filter((event) =>
+      event.title.toLocaleLowerCase("id-ID").includes(query)
     );
-  }, [safePage, totalPages]);
+  }, [lists, query, tab]);
 
-  const hasSearch = searchQuery.trim().length > 0;
+  const totalPages = Math.max(
+    1,
+    Math.ceil(visible.length / PUBLIC_EVENT_PAGE_SIZE)
+  );
+  const currentPage = Math.min(page, totalPages);
+  const pageEvents = useMemo(
+    () =>
+      visible.slice(
+        (currentPage - 1) * PUBLIC_EVENT_PAGE_SIZE,
+        currentPage * PUBLIC_EVENT_PAGE_SIZE
+      ),
+    [visible, currentPage]
+  );
 
-  // Update search and reset pagination
-  const handleSearch = (value: string) => {
-    setSearchQuery(value);
-    setCurrentPage(1);
-  };
+  function changeTab(next: Tab) {
+    if (next === tab) return;
+    setTab(next);
+    setPage(1);
+  }
 
-  // Clear search
-  const clearSearch = () => {
-    setSearchQuery("");
-    setCurrentPage(1);
-  };
-
-  // Change page
-  const goToPage = (page: number) => {
-    if (
-      page < 1 ||
-      page > totalPages ||
-      page === safePage
-    ) {
-      return;
-    }
-
-    setCurrentPage(page);
-
-    const reducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)"
-    ).matches;
-
-    sectionRef.current?.scrollIntoView({
-      behavior: reducedMotion ? "auto" : "smooth",
-      block: "start",
-    });
-  };
+  function changePage(next: number) {
+    if (next < 1 || next > totalPages) return;
+    setPage(next);
+  }
 
   return (
-    <section
-      ref={sectionRef}
-      id="events-list"
-      aria-label="Daftar kegiatan"
-      className="mt-7 scroll-mt-28 sm:mt-12"
-    >
-      {/* Section Heading */}
-      <div className="mb-6 hidden sm:block">
-        <h2 className="font-heading text-2xl font-extrabold tracking-tight text-brand-text sm:text-3xl">
-          Temukan{" "}
-          <span className="text-brand-pink">
-            Kegiatan.
-          </span>
-        </h2>
+    <section aria-label="Jelajahi kegiatan" className="mt-6 sm:mt-8">
+      <div className="rounded-2xl border border-brand-pink/10 bg-white p-3 shadow-sm sm:p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-brand-pink/15 px-3 transition focus-within:border-brand-pink">
+            <Search size={18} aria-hidden="true" className="shrink-0 text-brand-pink" />
+            <input
+              type="search"
+              aria-label="Cari kegiatan"
+              placeholder="Cari nama kegiatan..."
+              value={searchInput}
+              onChange={(e) => {
+                setSearchInput(e.target.value);
+                setPage(1);
+              }}
+              className="min-w-0 flex-1 bg-transparent py-3 text-sm text-brand-text outline-none placeholder:text-brand-muted"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => { setSearchInput(""); setPage(1); }}
+                className="shrink-0 text-xs font-semibold text-brand-pink hover:text-brand-dark"
+              >
+                Hapus
+              </button>
+            )}
+          </div>
 
-        <p className="mt-2 max-w-xl text-sm leading-6 text-brand-muted">
-          Cari kegiatan berdasarkan nama, kategori,
-          atau lokasi yang kamu inginkan.
+          <div
+            role="group"
+            aria-label="Filter waktu kegiatan"
+            className="relative grid w-full grid-cols-2 rounded-full border border-brand-pink/15 bg-brand-soft/40 p-1 md:w-[306px]"
+          >
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute bottom-1 top-1 left-1 w-[calc(50%-4px)] rounded-full bg-brand-pink shadow-sm transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+                tab === "past" ? "translate-x-full" : "translate-x-0"
+              }`}
+            />
+            <button
+              type="button"
+              aria-pressed={tab === "upcoming"}
+              onClick={() => changeTab("upcoming")}
+              className={`relative z-10 whitespace-nowrap rounded-full px-2 py-2.5 text-xs font-bold transition-colors sm:text-sm ${
+                tab === "upcoming" ? "text-white" : "text-brand-muted hover:text-brand-pink"
+              }`}
+            >
+              Terdekat ({lists.upcoming.length})
+            </button>
+            <button
+              type="button"
+              aria-pressed={tab === "past"}
+              onClick={() => changeTab("past")}
+              className={`relative z-10 whitespace-nowrap rounded-full px-2 py-2.5 text-xs font-bold transition-colors sm:text-sm ${
+                tab === "past" ? "text-white" : "text-brand-muted hover:text-brand-pink"
+              }`}
+            >
+              Sudah Lewat ({lists.past.length})
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {hasMore && (
+        <p role="status" className="mt-3 rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          Daftar melebihi 200 kegiatan. Hanya 200 kegiatan terbaru ditampilkan; pagination server diperlukan untuk menampilkan seluruh arsip.
+        </p>
+      )}
+
+      <div className="mb-4 mt-5 flex items-center justify-between gap-2">
+        <p className="text-sm text-brand-muted">
+          <strong className="text-brand-text">{visible.length}</strong>{" "}
+          {tab === "upcoming" ? "kegiatan terdekat" : "kegiatan sudah lewat"}
+          {query ? " sesuai pencarian" : ""}
         </p>
       </div>
 
-      {/* Search Bar */}
-      <div className="mb-6 sm:mb-8">
-        <div className="relative w-full">
-          <label
-            htmlFor="event-search"
-            className="sr-only"
-          >
-            Cari kegiatan
-          </label>
-
-          <Search
-            size={19}
-            aria-hidden="true"
-            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-brand-pink"
-          />
-
-          <input
-            id="event-search"
-            type="search"
-            value={searchQuery}
-            onChange={(event) =>
-              handleSearch(event.target.value)
-            }
-            placeholder="Cari nama kegiatan, kategori, atau lokasi..."
-            autoComplete="off"
-            className="h-12 w-full rounded-2xl border border-rose-100 bg-white py-3 pl-12 pr-12 text-sm text-brand-text shadow-sm outline-none transition-all duration-200 placeholder:text-brand-muted/70 focus:border-brand-pink focus:ring-4 focus:ring-brand-pink/10 sm:h-14"
-          />
-
-          {/* Clear Search Button */}
-          {searchQuery.length > 0 && (
-            <button
-              type="button"
-              onClick={clearSearch}
-              aria-label="Hapus pencarian"
-              className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-brand-muted transition-colors duration-200 hover:bg-brand-soft hover:text-brand-pink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-pink"
-            >
-              <X
-                size={17}
-                aria-hidden="true"
-              />
-            </button>
-          )}
-        </div>
+      <div aria-live="polite" aria-atomic="false">
+        {pageEvents.length ? (
+          <div key={`${tab}-${query}-${currentPage}`} className="grid animate-[bkEventsFade_220ms_ease-out_both] gap-5 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6 motion-reduce:animate-none">
+            {pageEvents.map((event) => (
+              <EventCard key={event.id} event={event} />
+            ))}
+          </div>
+        ) : (
+          <div key={`empty-${tab}-${query}`} className="flex animate-[bkEventsFade_220ms_ease-out_both] flex-col items-center rounded-3xl border border-brand-pink/10 bg-brand-soft px-5 py-12 text-center motion-reduce:animate-none">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white text-brand-pink">
+              <CalendarDays size={24} />
+            </div>
+            <h2 className="mt-4 font-heading text-lg font-extrabold text-brand-text">
+              {query ? "Kegiatan Tidak Ditemukan" : tab === "upcoming" ? "Belum Ada Kegiatan Terdekat" : "Belum Ada Kegiatan Terdahulu"}
+            </h2>
+            <p className="mt-2 max-w-md text-sm leading-7 text-brand-muted">
+              {query ? "Coba gunakan kata kunci yang berbeda." : tab === "upcoming" ? "Nantikan kegiatan mendatang bersama Berbagi Kebahagiaan." : "Belum ada kegiatan terdahulu yang ditampilkan."}
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Clear Search Action */}
-      {hasSearch && (
-        <div className="mb-5 flex justify-end">
-          <button
-            type="button"
-            onClick={clearSearch}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-pink transition-colors hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-pink"
-          >
-            <X size={15} aria-hidden="true" />
-            Reset Pencarian
-          </button>
-        </div>
-      )}
-
-      {/* Event Cards */}
-      {paginatedEvents.length > 0 ? (
-        <div className="grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
-          {paginatedEvents.map((event) => (
-            <EventCard
-              key={event.slug}
-              event={event}
-            />
-          ))}
-        </div>
-      ) : (
-        /* Empty State */
-        <div className="flex flex-col items-center rounded-3xl border border-brand-pink/10 bg-brand-soft px-5 py-14 text-center sm:px-8 sm:py-16">
-          <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-brand-pink shadow-sm">
-            <Search
-              size={26}
-              aria-hidden="true"
-            />
-          </div>
-
-          <h3 className="font-heading text-lg font-extrabold text-brand-text sm:text-xl">
-            {events.length === 0
-              ? "Belum Ada Kegiatan"
-              : "Kegiatan Tidak Ditemukan"}
-          </h3>
-
-          <p className="mt-3 max-w-md text-sm leading-7 text-brand-muted">
-            {events.length === 0
-              ? "Nantikan informasi kegiatan berikutnya bersama Berbagi Kebahagiaan."
-              : "Coba gunakan kata kunci lain untuk menemukan kegiatan yang kamu cari."}
-          </p>
-
-          {hasSearch && (
-            <button
-              type="button"
-              onClick={clearSearch}
-              className="mt-6 rounded-full bg-brand-pink px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-pink"
-            >
-              Tampilkan Semua Kegiatan
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Pagination */}
       {totalPages > 1 && (
-        <nav
-          aria-label="Navigasi halaman kegiatan"
-          className="mt-10 flex flex-wrap items-center justify-center gap-2 sm:mt-12"
-        >
-          {/* Previous */}
-          <button
-            type="button"
-            onClick={() => goToPage(safePage - 1)}
-            disabled={safePage === 1}
-            aria-label="Halaman sebelumnya"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-rose-100 bg-white text-brand-text transition-colors hover:border-brand-pink hover:text-brand-pink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-pink disabled:cursor-not-allowed disabled:opacity-40 sm:h-11 sm:w-11"
-          >
-            <ChevronLeft
-              size={19}
-              aria-hidden="true"
-            />
+        <nav aria-label="Navigasi halaman kegiatan" className="mt-8 flex items-center justify-center gap-3">
+          <button type="button" disabled={currentPage <= 1} onClick={() => changePage(currentPage - 1)} aria-label="Halaman sebelumnya" className="flex h-10 w-10 items-center justify-center rounded-xl border border-brand-pink/15 bg-white text-brand-pink disabled:opacity-40">
+            <ChevronLeft size={18} />
           </button>
-
-          {/* Page Numbers */}
-          {pageNumbers.map((page) => {
-            const active = page === safePage;
-
-            return (
-              <button
-                key={page}
-                type="button"
-                onClick={() => goToPage(page)}
-                aria-label={`Halaman ${page}`}
-                aria-current={active ? "page" : undefined}
-                className={`flex h-10 min-w-10 items-center justify-center rounded-xl px-2 text-sm font-bold transition-all duration-200 sm:h-11 sm:min-w-11 ${
-                  active
-                    ? "bg-brand-pink text-white shadow-md shadow-brand-pink/15"
-                    : "border border-rose-100 bg-white text-brand-muted hover:border-brand-pink hover:text-brand-pink"
-                }`}
-              >
-                {page}
-              </button>
-            );
-          })}
-
-          {/* Next */}
-          <button
-            type="button"
-            onClick={() => goToPage(safePage + 1)}
-            disabled={safePage === totalPages}
-            aria-label="Halaman berikutnya"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-rose-100 bg-white text-brand-text transition-colors hover:border-brand-pink hover:text-brand-pink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-pink disabled:cursor-not-allowed disabled:opacity-40 sm:h-11 sm:w-11"
-          >
-            <ChevronRight
-              size={19}
-              aria-hidden="true"
-            />
+          <span className="text-sm font-bold text-brand-text">{currentPage} / {totalPages}</span>
+          <button type="button" disabled={currentPage >= totalPages} onClick={() => changePage(currentPage + 1)} aria-label="Halaman berikutnya" className="flex h-10 w-10 items-center justify-center rounded-xl border border-brand-pink/15 bg-white text-brand-pink disabled:opacity-40">
+            <ChevronRight size={18} />
           </button>
         </nav>
       )}
+
+      {pageEvents.length > 0 && (
+        <p className="mt-3 text-center text-xs text-brand-muted">
+          {(currentPage - 1) * PUBLIC_EVENT_PAGE_SIZE + 1}–{Math.min(currentPage * PUBLIC_EVENT_PAGE_SIZE, visible.length)} dari {visible.length} kegiatan
+        </p>
+      )}
+
+      <style>{`
+        @keyframes bkEventsFade {
+          from { opacity: 0; transform: translateY(7px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </section>
   );
 }

@@ -35,15 +35,8 @@ const navigation: NavigationItem[] = [
   },
   {
     label: "Kegiatan",
-    href: "/",
+    href: "/events",
     key: "agenda",
-    section: "agenda",
-  },
-  {
-    label: "Galeri",
-    href: "/",
-    key: "gallery",
-    section: "gallery",
   },
   {
     label: "Cek Status",

@@ -1,1 +1,13 @@
-import type {NextConfig} from "next";const config:NextConfig={};export default config;
+
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "4mb",
+    },
+    proxyClientMaxBodySize: "4mb",
+  },
+};
+
+export default nextConfig;

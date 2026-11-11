@@ -2,3 +2,22 @@
 :root {--brand-pink:#EE3A77;--brand-dark:#B82053;--brand-soft:#FDE8EF;--brand-cream:#FFF9F6;--brand-text:#373634;--brand-muted:#6E5F68;}
 @theme inline {--color-brand-pink:var(--brand-pink);--color-brand-dark:var(--brand-dark);--color-brand-soft:var(--brand-soft);--color-brand-cream:var(--brand-cream);--color-brand-text:var(--brand-text);--color-brand-muted:var(--brand-muted);--font-heading:var(--font-montserrat);--font-body:var(--font-poppins);}
 body{background:var(--brand-cream);color:var(--brand-text);font-family:var(--font-poppins),sans-serif;}h1,h2,h3,h4{font-family:var(--font-montserrat),sans-serif;}button,a{transition:all .2s ease;}*:focus-visible{outline:3px solid var(--brand-pink);outline-offset:3px;}
+
+/* Smooth transition for public event cards */
+@keyframes eventsFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="eventsFadeIn"] {
+    animation: none !important;
+  }
+}
