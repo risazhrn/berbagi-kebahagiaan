@@ -20,9 +20,8 @@ export async function getAllPublicEvents(): Promise<{
     .from("events")
     .select(EVENT_FIELDS)
     .in("status", ["published", "completed"])
-    .order("start_at", { ascending: false })
-    .order("id", { ascending: true })
-    .range(0, MAX_PUBLIC_EVENTS); // request one extra to detect overflow
+    .eq("is_archived", false)
+    .order("start_at", { ascending: false });
 
   if (error) {
     console.error("Load public events:", error);
