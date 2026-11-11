@@ -1,5 +1,54 @@
-.next/
-node_modules/
-.env.local
+
+# Dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# Next.js
+/.next/
+/out/
+/build/
+/dist/
+next-env.d.ts
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel
+
+# Testing
+/coverage
+/playwright-report/
+/test-results/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 *.log
+
+# TypeScript
+*.tsbuildinfo
+
+# OS files
 .DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Local Supabase
+supabase/.branches/
+supabase/.temp/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp

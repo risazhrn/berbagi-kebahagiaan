@@ -63,9 +63,6 @@ export default function AboutSection() {
                 />
               </div>
 
-              <span className="rounded-full border border-brand-pink/15 bg-white/70 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-brand-dark">
-                Our Vision
-              </span>
             </div>
 
             <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.16em] text-brand-pink">
